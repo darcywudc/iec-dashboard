@@ -1,0 +1,99 @@
+{
+  "tasks": [
+    {
+      "id": "1",
+      "title": "Discord #coding session 重置",
+      "description": "Token 已满，需要 /compact 或 /new 重置",
+      "status": "in-progress",
+      "priority": "high",
+      "project": "系统运维",
+      "tags": [
+        "discord",
+        "openclaw"
+      ],
+      "dueDate": null,
+      "createdAt": "2026-02-18T09:00:00.000Z",
+      "updatedAt": "2026-02-18T12:41:43.702Z"
+    },
+    {
+      "id": "2",
+      "title": "运行 openclaw doctor --repair",
+      "description": "修复 service PATH 问题",
+      "status": "todo",
+      "priority": "medium",
+      "project": "系统运维",
+      "tags": [
+        "openclaw"
+      ],
+      "dueDate": null,
+      "createdAt": "2026-02-18T09:00:00.000Z",
+      "updatedAt": "2026-02-18T12:41:43.702Z"
+    },
+    {
+      "id": "3",
+      "title": "smarts / BearingSmart 开发",
+      "description": "BearingSmart 智能监测系统开发",
+      "status": "in-progress",
+      "priority": "high",
+      "project": "IEC 开发",
+      "tags": [
+        "smarts",
+        "iot"
+      ],
+      "dueDate": null,
+      "createdAt": "2026-02-18T09:00:00.000Z",
+      "updatedAt": "2026-02-18T12:41:43.702Z"
+    },
+    {
+      "id": "4",
+      "title": "IEC 产品知识库维护",
+      "description": "更新产品文档和知识库",
+      "status": "todo",
+      "priority": "medium",
+      "project": "IEC 开发",
+      "tags": [
+        "iec",
+        "docs"
+      ],
+      "dueDate": null,
+      "createdAt": "2026-02-18T09:00:00.000Z",
+      "updatedAt": "2026-02-18T12:41:43.702Z"
+    },
+    {
+      "id": "5",
+      "title": "RPM 财务报告分析 Q3/Q4",
+      "description": "完成 RPM Q3/Q4 2025 财务报告分析",
+      "status": "todo",
+      "priority": "medium",
+      "project": "分析任务",
+      "tags": [
+        "rpm",
+        "finance"
+      ],
+      "dueDate": null,
+      "createdAt": "2026-02-18T09:00:00.000Z",
+      "updatedAt": "2026-02-18T12:41:43.702Z"
+    },
+    {
+      "id": "6",
+      "title": "任务看板系统搭建",
+      "description": "Node.js + Express + WebSocket + 看板 UI",
+      "status": "in-progress",
+      "priority": "high",
+      "project": "系统运维",
+      "tags": [
+        "openclaw",
+        "dashboard"
+      ],
+      "dueDate": null,
+      "createdAt": "2026-02-18T09:00:00.000Z",
+      "updatedAt": "2026-02-18T12:41:43.702Z"
+    }
+  ],
+  "projects": [
+    "系统运维",
+    "IEC 开发",
+    "分析任务"
+  ],
+  "nextId": 7
+}
