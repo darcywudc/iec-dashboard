@@ -12,6 +12,9 @@
         "openclaw"
       ],
       "dueDate": null,
+      "sessionKey": null,
+      "files": [],
+      "contextNote": "",
       "createdAt": "2026-02-18T09:00:00.000Z",
       "updatedAt": "2026-02-18T12:41:43.702Z"
     },
@@ -26,6 +29,9 @@
         "openclaw"
       ],
       "dueDate": null,
+      "sessionKey": null,
+      "files": [],
+      "contextNote": "",
       "createdAt": "2026-02-18T09:00:00.000Z",
       "updatedAt": "2026-02-18T12:41:43.702Z"
     },
@@ -41,6 +47,9 @@
         "iot"
       ],
       "dueDate": null,
+      "sessionKey": null,
+      "files": [],
+      "contextNote": "",
       "createdAt": "2026-02-18T09:00:00.000Z",
       "updatedAt": "2026-02-18T12:41:43.702Z"
     },
@@ -56,6 +65,9 @@
         "docs"
       ],
       "dueDate": null,
+      "sessionKey": null,
+      "files": [],
+      "contextNote": "",
       "createdAt": "2026-02-18T09:00:00.000Z",
       "updatedAt": "2026-02-18T12:41:43.702Z"
     },
@@ -71,6 +83,9 @@
         "finance"
       ],
       "dueDate": null,
+      "sessionKey": null,
+      "files": [],
+      "contextNote": "",
       "createdAt": "2026-02-18T09:00:00.000Z",
       "updatedAt": "2026-02-18T12:41:43.702Z"
     },
@@ -86,6 +101,9 @@
         "dashboard"
       ],
       "dueDate": null,
+      "sessionKey": null,
+      "files": [],
+      "contextNote": "",
       "createdAt": "2026-02-18T09:00:00.000Z",
       "updatedAt": "2026-02-18T12:41:43.702Z"
     }

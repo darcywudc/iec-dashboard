@@ -85,6 +85,9 @@ app.post('/api/tasks', (req, res) => {
     project: req.body.project || '未分类',
     tags: req.body.tags || [],
     dueDate: req.body.dueDate || null,
+    sessionKey: req.body.sessionKey || null,
+    files: req.body.files || [],
+    contextNote: req.body.contextNote || '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -345,6 +348,79 @@ app.get('/api/openai/costs', async (req, res) => {
 // ── OpenClaw Sessions API ─────────────────────────────────
 const GW_URL = 'http://127.0.0.1:18789';
 const https_mod = require('http');
+
+// GET session history
+app.get('/api/sessions/:encodedKey/history', async (req, res) => {
+  try {
+    const token = req.headers['authorization'] || '';
+    const sessionKey = decodeURIComponent(req.params.encodedKey);
+    const body = JSON.stringify({ tool: 'sessions_history', args: { sessionKey, limit: 50 } });
+    const response = await new Promise((resolve, reject) => {
+      const reqOpts = {
+        hostname: '127.0.0.1',
+        port: 18789,
+        path: '/tools/invoke',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token,
+          'Content-Length': Buffer.byteLength(body)
+        }
+      };
+      const r = https_mod.request(reqOpts, (resp) => {
+        let data = '';
+        resp.on('data', chunk => data += chunk);
+        resp.on('end', () => resolve(data));
+      });
+      r.on('error', reject);
+      r.write(body);
+      r.end();
+    });
+    const parsed = JSON.parse(response);
+    if (parsed.ok && parsed.result?.content?.[0]?.text) {
+      const inner = JSON.parse(parsed.result.content[0].text);
+      res.json(inner);
+    } else {
+      res.json({ messages: [], error: 'unexpected format' });
+    }
+  } catch(e) {
+    res.status(500).json({ messages: [], error: e.message });
+  }
+});
+
+// POST send message to session
+app.post('/api/sessions/send', async (req, res) => {
+  try {
+    const token = req.headers['authorization'] || '';
+    const { sessionKey, message } = req.body;
+    const body = JSON.stringify({ tool: 'sessions_send', args: { sessionKey, message } });
+    const response = await new Promise((resolve, reject) => {
+      const reqOpts = {
+        hostname: '127.0.0.1',
+        port: 18789,
+        path: '/tools/invoke',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token,
+          'Content-Length': Buffer.byteLength(body)
+        }
+      };
+      const r = https_mod.request(reqOpts, (resp) => {
+        let data = '';
+        resp.on('data', chunk => data += chunk);
+        resp.on('end', () => resolve(data));
+      });
+      r.on('error', reject);
+      r.write(body);
+      r.end();
+    });
+    const parsed = JSON.parse(response);
+    res.json(parsed);
+  } catch(e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
 app.get('/api/openclaw/sessions', async (req, res) => {
   try {
