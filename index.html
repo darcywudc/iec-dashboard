@@ -541,6 +541,9 @@ function switchTab(id, el){
   if(id==='crs') { loadCRS(); loadGCP(); loadOpenAI(); }
 }
 
+// ── Utilities ──
+function escHtml(s){ if(!s)return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
 // ── Board ──
 function renderBoard(){
   const tb = document.getElementById('toolbar');
@@ -920,7 +923,6 @@ function renderMD(md){
     .replace(/\[(.+?)\]\((.+?)\)/g,'<a href="$2" target="_blank">$1</a>')
     .replace(/\n\n/g,'</p><p>').replace(/^(?!<[hulo]|<\/[hulo]|<table|<\/table|<hr)(.+)$/gm,'<p>$1</p>');
 }
-function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ── Chat ──
 function toggleChat(){
