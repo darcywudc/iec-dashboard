@@ -4,6 +4,7 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const { createProxyMiddleware } = require('http-proxy-middleware');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const server = http.createServer(app);
@@ -11,6 +12,13 @@ const wss = new WebSocket.Server({ server });
 
 const TASKS_FILE = path.join(__dirname, 'tasks.json');
 const PORT = 18790;
+const GW_BASE = 'http://127.0.0.1:18789';
+const GW_TOKEN = (() => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync('/home/node/.openclaw/openclaw.json', 'utf8'));
+    return cfg?.gateway?.auth?.token || '';
+  } catch { return ''; }
+})();
 
 // CORS（放最前面）
 app.use((req, res, next) => {
@@ -68,33 +76,126 @@ function broadcast(msg) {
   });
 }
 
+// ── Gateway helper ────────────────────────────────────────
+function gwInvoke(tool, args, authToken) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ tool, args });
+    const opts = {
+      hostname: '127.0.0.1',
+      port: 18789,
+      path: '/tools/invoke',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken || GW_TOKEN}`,
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+    const r = http.request(opts, (resp) => {
+      let data = '';
+      resp.on('data', chunk => data += chunk);
+      resp.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch(e) { reject(e); }
+      });
+    });
+    r.on('error', reject);
+    r.write(body);
+    r.end();
+  });
+}
+
+// Initialize a new task session via Gateway chat completions
+// Uses /v1/chat/completions with x-openclaw-session-key header to create & prime the session
+async function initTaskSession(sessionKey, contextNote, authToken) {
+  return new Promise((resolve, reject) => {
+    const systemMsg = contextNote
+      ? `You are an AI assistant for a task session. Context: ${contextNote}`
+      : 'You are an AI assistant for a task session.';
+    const body = JSON.stringify({
+      model: 'claude-haiku-4',
+      messages: [
+        { role: 'system', content: systemMsg },
+        { role: 'user', content: contextNote
+            ? `Task initialized. Context note: ${contextNote}\n\nAcknowledge with a brief summary of what you'll help with.`
+            : 'Task session initialized. Ready to assist.' }
+      ],
+      max_tokens: 150
+    });
+    const opts = {
+      hostname: '127.0.0.1',
+      port: 18789,
+      path: '/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken || GW_TOKEN}`,
+        'x-openclaw-session-key': sessionKey,
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
+    const r = http.request(opts, (resp) => {
+      let data = '';
+      resp.on('data', chunk => data += chunk);
+      resp.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch(e) { reject(e); }
+      });
+    });
+    r.on('error', reject);
+    r.write(body);
+    r.end();
+  });
+}
+
 // GET all tasks
 app.get('/api/tasks', (req, res) => {
   res.json(readTasks());
 });
 
-// POST new task
-app.post('/api/tasks', (req, res) => {
-  const data = readTasks();
-  const task = {
-    id: String(data.nextId++),
-    title: req.body.title,
-    description: req.body.description || '',
-    status: req.body.status || 'todo',
-    priority: req.body.priority || 'medium',
-    project: req.body.project || '未分类',
-    tags: req.body.tags || [],
-    dueDate: req.body.dueDate || null,
-    sessionKey: req.body.sessionKey || null,
-    files: req.body.files || [],
-    contextNote: req.body.contextNote || '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  if (!data.projects.includes(task.project)) data.projects.push(task.project);
-  data.tasks.push(task);
-  writeTasks(data);
-  res.json(task);
+// POST new task — auto-generates sessionKey and initializes Gateway session
+app.post('/api/tasks', async (req, res) => {
+  try {
+    const data = readTasks();
+    const taskId = String(data.nextId++);
+    const contextNote = req.body.contextNote || '';
+
+    // Auto-generate sessionKey (format: agent:main:task:<uuid>)
+    // Allow caller to supply one explicitly (e.g. linking to existing session)
+    const sessionKey = req.body.sessionKey || `agent:main:task:${uuidv4()}`;
+
+    const task = {
+      id: taskId,
+      title: req.body.title,
+      description: req.body.description || '',
+      status: req.body.status || 'todo',
+      priority: req.body.priority || 'medium',
+      project: req.body.project || '未分类',
+      tags: req.body.tags || [],
+      dueDate: req.body.dueDate || null,
+      sessionKey,
+      files: req.body.files || [],
+      contextNote,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      archivedAt: null
+    };
+
+    if (!data.projects.includes(task.project)) data.projects.push(task.project);
+    data.tasks.push(task);
+    writeTasks(data);
+
+    // Async: initialize the session in Gateway (fire-and-forget is fine; we respond immediately)
+    const authToken = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '') || GW_TOKEN;
+    initTaskSession(sessionKey, contextNote, authToken).then(gwResp => {
+      console.log(`[session-init] ${sessionKey} → ${gwResp?.choices?.[0]?.message?.content?.slice(0, 80) || JSON.stringify(gwResp).slice(0, 120)}`);
+    }).catch(err => {
+      console.warn(`[session-init] Failed to initialize session ${sessionKey}:`, err.message);
+    });
+
+    res.json(task);
+  } catch (err) {
+    console.error('[POST /api/tasks]', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PATCH update task
@@ -346,118 +447,110 @@ app.get('/api/openai/costs', async (req, res) => {
 });
 
 // ── OpenClaw Sessions API ─────────────────────────────────
-const GW_URL = 'http://127.0.0.1:18789';
-const https_mod = require('http');
+// Helper: extract auth token from request (falling back to configured GW_TOKEN)
+function getAuthToken(req) {
+  const hdr = req.headers['authorization'] || '';
+  return hdr.replace(/^Bearer\s+/i, '') || GW_TOKEN;
+}
 
-// GET session history
-app.get('/api/sessions/:encodedKey/history', async (req, res) => {
+// Helper: unwrap sessions_* tool response (content[0].text → parsed JSON)
+function unwrapSessionsTool(parsed, fallback) {
+  if (parsed.ok && parsed.result?.content?.[0]?.text) {
+    try { return JSON.parse(parsed.result.content[0].text); } catch { /* fall through */ }
+  }
+  return fallback;
+}
+
+// GET /api/sessions — list all OpenClaw sessions
+app.get('/api/sessions', async (req, res) => {
   try {
-    const token = req.headers['authorization'] || '';
+    const limit = parseInt(req.query.limit) || 20;
+    const parsed = await gwInvoke('sessions_list', { limit }, getAuthToken(req));
+    const inner = unwrapSessionsTool(parsed, { sessions: [] });
+    res.json(inner);
+  } catch(e) {
+    res.status(500).json({ sessions: [], error: e.message });
+  }
+});
+
+// GET /api/sessions/:key — fetch chat history for a session (primary endpoint)
+// Frontend calls: GET /api/sessions/:key  → { messages: [...] }
+app.get('/api/sessions/:encodedKey', async (req, res) => {
+  // Don't handle sub-paths here (those have their own routes above)
+  // Express matches most-specific first, so /api/sessions/send (POST) won't hit this GET
+  try {
     const sessionKey = decodeURIComponent(req.params.encodedKey);
-    const body = JSON.stringify({ tool: 'sessions_history', args: { sessionKey, limit: 50 } });
-    const response = await new Promise((resolve, reject) => {
-      const reqOpts = {
-        hostname: '127.0.0.1',
-        port: 18789,
-        path: '/tools/invoke',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token,
-          'Content-Length': Buffer.byteLength(body)
-        }
-      };
-      const r = https_mod.request(reqOpts, (resp) => {
-        let data = '';
-        resp.on('data', chunk => data += chunk);
-        resp.on('end', () => resolve(data));
-      });
-      r.on('error', reject);
-      r.write(body);
-      r.end();
-    });
-    const parsed = JSON.parse(response);
-    if (parsed.ok && parsed.result?.content?.[0]?.text) {
-      const inner = JSON.parse(parsed.result.content[0].text);
-      res.json(inner);
-    } else {
-      res.json({ messages: [], error: 'unexpected format' });
-    }
+    const limit = parseInt(req.query.limit) || 50;
+    const parsed = await gwInvoke('sessions_history', { sessionKey, limit }, getAuthToken(req));
+    const inner = unwrapSessionsTool(parsed, { messages: [] });
+    res.json(inner);
   } catch(e) {
     res.status(500).json({ messages: [], error: e.message });
   }
 });
 
-// POST send message to session
-app.post('/api/sessions/send', async (req, res) => {
+// GET /api/sessions/:key/history — fetch chat history for a session (legacy endpoint)
+// :key is URL-encoded (colons → %3A)
+app.get('/api/sessions/:encodedKey/history', async (req, res) => {
   try {
-    const token = req.headers['authorization'] || '';
-    const { sessionKey, message } = req.body;
-    const body = JSON.stringify({ tool: 'sessions_send', args: { sessionKey, message } });
-    const response = await new Promise((resolve, reject) => {
-      const reqOpts = {
-        hostname: '127.0.0.1',
-        port: 18789,
-        path: '/tools/invoke',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token,
-          'Content-Length': Buffer.byteLength(body)
-        }
-      };
-      const r = https_mod.request(reqOpts, (resp) => {
-        let data = '';
-        resp.on('data', chunk => data += chunk);
-        resp.on('end', () => resolve(data));
-      });
-      r.on('error', reject);
-      r.write(body);
-      r.end();
-    });
-    const parsed = JSON.parse(response);
+    const sessionKey = decodeURIComponent(req.params.encodedKey);
+    const limit = parseInt(req.query.limit) || 50;
+    const parsed = await gwInvoke('sessions_history', { sessionKey, limit }, getAuthToken(req));
+    const inner = unwrapSessionsTool(parsed, { messages: [] });
+    res.json(inner);
+  } catch(e) {
+    res.status(500).json({ messages: [], error: e.message });
+  }
+});
+
+// POST /api/sessions/:key/send — send a message to a session
+app.post('/api/sessions/:encodedKey/send', async (req, res) => {
+  try {
+    const sessionKey = decodeURIComponent(req.params.encodedKey);
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ ok: false, error: 'message required' });
+    const parsed = await gwInvoke('sessions_send', { sessionKey, message }, getAuthToken(req));
     res.json(parsed);
   } catch(e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
+// POST /api/sessions/send — legacy flat endpoint (body: { sessionKey, message })
+app.post('/api/sessions/send', async (req, res) => {
+  try {
+    const { sessionKey, message } = req.body;
+    if (!sessionKey) return res.status(400).json({ ok: false, error: 'sessionKey required' });
+    if (!message) return res.status(400).json({ ok: false, error: 'message required' });
+    const parsed = await gwInvoke('sessions_send', { sessionKey, message }, getAuthToken(req));
+    res.json(parsed);
+  } catch(e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// GET /api/openclaw/sessions — legacy alias (kept for backward compat)
 app.get('/api/openclaw/sessions', async (req, res) => {
   try {
-    const token = req.headers['authorization'] || '';
-    const body = JSON.stringify({ tool: 'sessions_list', args: { limit: 20 } });
-    const response = await new Promise((resolve, reject) => {
-      const reqOpts = {
-        hostname: '127.0.0.1',
-        port: 18789,
-        path: '/tools/invoke',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token,
-          'Content-Length': Buffer.byteLength(body)
-        }
-      };
-      const r = https_mod.request(reqOpts, (resp) => {
-        let data = '';
-        resp.on('data', chunk => data += chunk);
-        resp.on('end', () => resolve(data));
-      });
-      r.on('error', reject);
-      r.write(body);
-      r.end();
-    });
-    const parsed = JSON.parse(response);
-    // 解包 sessions_list 返回的 text content
-    if (parsed.ok && parsed.result?.content?.[0]?.text) {
-      const inner = JSON.parse(parsed.result.content[0].text);
-      res.json(inner);
-    } else {
-      res.json({ sessions: [], error: 'unexpected format' });
-    }
+    const limit = parseInt(req.query.limit) || 20;
+    const parsed = await gwInvoke('sessions_list', { limit }, getAuthToken(req));
+    const inner = unwrapSessionsTool(parsed, { sessions: [] });
+    res.json(inner);
   } catch(e) {
     res.status(500).json({ sessions: [], error: e.message });
   }
+});
+
+// POST /api/tasks/:id/files — associate files to a task
+app.post('/api/tasks/:id/files', (req, res) => {
+  const data = readTasks();
+  const idx = data.tasks.findIndex(t => t.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+  const newFiles = Array.isArray(req.body.files) ? req.body.files : [req.body.files].filter(Boolean);
+  const existing = data.tasks[idx].files || [];
+  data.tasks[idx].files = [...new Set([...existing, ...newFiles])];
+  writeTasks(data);
+  res.json(data.tasks[idx]);
 });
 
 // (代理已移到 express.json() 之前)
